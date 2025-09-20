@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F-List Profile Editor Overhaul - Live Profile Preview
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      5.0
 // @description  Adds a live side-panel preview for the character editor that fully inherits the site's theme and component styles.
 // @author       Derby Falcon
 // @match        *://*.f-list.net/character_edit.php*
@@ -251,19 +251,31 @@
             parent.appendChild(a);
         }));
         parser.addTag(new BBCodeCustomTag('collapse', (p, parent, param) => {
-            const header = p.createElement('div'); header.className = 'CollapseHeader';
-            const headerText = p.createElement('div'); headerText.className = 'CollapseHeaderText';
+            const header = p.createElement('div');
+            header.className = 'CollapseHeader';
+            header.setAttribute('bound', 'true'); // Add bound attribute like website
+            
+            const headerText = p.createElement('div');
+            headerText.className = 'CollapseHeaderText';
+            
             const headerSpan = p.createElement('span');
             appendTextWithLineBreaks(headerSpan, param || '\u00A0');
-            headerText.appendChild(headerSpan); header.appendChild(headerText);
-            const block = p.createElement('div'); block.className = 'CollapseBlock';
+            
+            headerText.appendChild(headerSpan);
+            header.appendChild(headerText);
+            
+            const block = p.createElement('div');
+            block.className = 'CollapseBlock';
             block.style.display = 'none';
+            
             parent.appendChild(header);
             parent.appendChild(block);
+            
             $(header).on('click', function() {
                 $(this).toggleClass('ExpandedHeader');
                 $(block).slideToggle(200);
             });
+            
             return block;
         }));
         parser.addTag(new BBCodeTextTag('noparse', (p, parent, param, content) => {
@@ -376,16 +388,39 @@
                 transform-origin: top left;
                 /* Scaling will be applied by JS */
                 max-width: 100%;
-                min-width: 300px;
-                width: fit-content; /* Ensure content fits within constraints */
+                min-width: 659px; /* Start at default width of 659px */
+                width: 100%; /* Fill available width */
                 /* overflow-x: auto; REMOVED - scrollbar moved to panel level */
                 line-height: 1.4;
                 word-wrap: break-word;
+            }
+            #live-preview-content .character-description > * {
+                max-width: 100%; /* Constrain all direct children to container width */
+                box-sizing: border-box;
             }
             #live-preview-content .CollapseBlock {
                 background-color: #4C4646;
                 padding: 10px;
                 margin: 0;
+                width: 100%; /* Ensure collapse blocks fill container width */
+                box-sizing: border-box;
+                min-width: 100%; /* Maintain same width when expanded */
+                max-width: 659px; /* Constrain to same width as content */
+            }
+            #live-preview-content .CollapseHeader {
+                width: 100%; /* Ensure collapse headers fill container width */
+                box-sizing: border-box;
+                min-width: 100%; /* Maintain same width when collapsed */
+                max-width: 659px; /* Constrain to same width as content */
+            }
+            #live-preview-content .CollapseHeaderText {
+                width: 100%; /* Ensure header text fills the header */
+                box-sizing: border-box;
+            }
+            #live-preview-content .CollapseHeaderText span {
+                display: block;
+                width: 100%;
+                box-sizing: border-box;
             }
             #CharacterEditDescription {
                 resize: vertical !important;
@@ -410,7 +445,7 @@
         widthControlsHeader.style.borderBottom = '1px solid #444';
         widthControlsHeader.innerHTML = `
             <div class="width-control">
-                <span>Content Width:</span>
+                <span>Content Scale:</span>
                 <input type="range" id="content-width-slider" min="300" max="1200" value="659">
                 <span class="width-label" id="content-width-label">659px</span>
             </div>
@@ -509,6 +544,9 @@
         if (contentWidthSlider && contentWidthLabel && previewContent) {
             contentWidthSlider.addEventListener('input', (event) => {
                 const newWidth = event.target.value;
+                const scaleFactor = newWidth / 659; // Calculate scale factor based on default 659px
+                previewContent.style.transform = `scale(${scaleFactor})`;
+                previewContent.style.transformOrigin = 'top left';
                 previewContent.style.maxWidth = `${newWidth}px`;
                 contentWidthLabel.textContent = `${newWidth}px`;
             });
