@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         F-List Live Profile Preview
+// @name         F-List Profile Editor Overhaul - Live Profile Preview
 // @namespace    http://tampermonkey.net/
-// @version      4.2
+// @version      4.6
 // @description  Adds a live side-panel preview for the character editor that fully inherits the site's theme and component styles.
-// @author       Gemini
+// @author       Derby Falcon
 // @match        *://*.f-list.net/character_edit.php*
 // @grant        GM_addStyle
 // @grant        unsafeWindow
