@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F-List Profile Editor Overhaul - Live Profile Preview
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      5.1
 // @description  Adds a live side-panel preview for the character editor that fully inherits the site's theme and component styles.
 // @author       Derby Falcon
 // @match        *://*.f-list.net/character_edit.php*
@@ -15,7 +15,175 @@
     'use strict';
 
     // Hide elements immediately to prevent FOUC (Flash of Unstyled Content)
-    GM_addStyle('#Sidebar, #Content { visibility: hidden; }');
+    GM_addStyle(`
+        #Sidebar, #Content, #Footer, #width-controls-header { /* Added #Footer and #width-controls-header */
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out;
+        }
+    `);
+
+    GM_addStyle(`
+        /* Modern Toolbar Styles */
+        .modern-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            padding: 5px;
+            background-color: #2a2525; /* Darker background for the toolbar */
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            margin: 0 auto 10px auto; /* Center the toolbar and add bottom margin */
+            max-width: fit-content; /* Allow toolbar to shrink to content width */
+        }
+
+        .toolbar-section {
+            display: flex;
+            gap: 2px;
+            border-right: 1px solid #444;
+            padding-right: 5px;
+        }
+
+        .toolbar-section:last-child {
+            border-right: none;
+            padding-right: 0;
+        }
+
+        .toolbar-button {
+            background-color: #333;
+            color: #ccc;
+            border: 1px solid #555;
+            padding: 5px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+
+        .toolbar-button:hover {
+            background-color: #444;
+            border-color: #777;
+        }
+
+        /* Apply original F-List toolbar icon classes directly to spans */
+        .toolbar-button .ToolbarBold,
+        .toolbar-button .ToolbarItalic,
+        .toolbar-button .ToolbarUnderline,
+        .toolbar-button .ToolbarJustify,
+        .toolbar-button .ToolbarQuote,
+        .toolbar-button .ToolbarLink,
+        .toolbar-button .ToolbarColor,
+        .toolbar-button .ToolbarIcon,
+        .toolbar-button .ToolbarCollapse,
+        .toolbar-button .ToolbarInline,
+        .toolbar-button .ToolbarPreview { /* Assuming a class for preview if it exists */
+            display: inline-block;
+            width: 16px; /* Standard icon size */
+            height: 16px; /* Standard icon size */
+            background-repeat: no-repeat;
+            background-position: center center;
+            vertical-align: middle;
+            /* Removed margin-right to center icons within buttons */
+        }
+
+        /* Specific styles for dropdown buttons */
+        .toolbar-button .icon-unicode {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            background-repeat: no-repeat;
+            background-position: center center;
+            vertical-align: middle;
+            /* Removed margin-right to center icons within buttons */
+        }
+
+        .toolbar-button .ToolbarMonospace { background-image: url('https://static.f-list.net/images/toolbar/code.png'); } /* Assuming a code.png icon */
+
+        .toolbar-button .icon-unicode { background-image: url('https://static.f-list.net/images/charimage/42347482.png'); }
+        .toolbar-button .icon-smiley { background-image: url('https://static.f-list.net/images/charimage/42347340.png'); }
+
+
+        .toolbar-button[data-action="preview"] {
+            background-color: #78c624; /* F-List green */
+            color: #fff;
+            border-color: #6aa820;
+        }
+
+        .toolbar-button[data-action="preview"]:hover {
+            background-color: #6aa820;
+            border-color: #5c901c;
+        }
+
+        /* Dropdown specific styles */
+        .dropdown-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .dropdown-content {
+            display: none;
+            position: absolute;
+            background-color: #333;
+            min-width: 250px;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            z-index: 1;
+            border: 1px solid #555;
+            padding: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            left: 50%; /* Center the dropdown horizontally */
+            transform: translateX(-50%); /* Adjust for half of its own width */
+            top: 100%; /* Position below the button */
+        }
+
+        .smiley-dropdown-content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            min-width: 200px;
+        }
+
+        .dropdown-content table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .dropdown-content th, .dropdown-content td {
+            text-align: left;
+            padding: 5px;
+            border-bottom: 1px solid #444;
+        }
+
+        .dropdown-content th {
+            border-bottom: 1px solid #555;
+        }
+
+        .dropdown-content .cs {
+            border: 1px solid #000;
+            padding: 2px 5px;
+            cursor: pointer;
+            display: inline-block;
+            min-width: 20px;
+            text-align: center;
+            background-color: #555;
+        }
+
+        .dropdown-content .smiley-button {
+            background-color: transparent;
+            padding: 2px;
+            cursor: pointer;
+        }
+
+        .dropdown-content .smiley-button img {
+            width: 24px;
+            height: 24px;
+            vertical-align: middle;
+        }
+    `);
+
 
     /* global $, unsafeWindow, GM_addStyle */
 
@@ -88,7 +256,7 @@
                     let tagKey = input.substring(tagStart + 1, paramIndex).trim().toLowerCase();
                     if (tagKey.length === 0) { tagStart = -1; continue; }
                     const param = paramStart > tagStart ? input.substring(paramStart + 1, i) : '';
-                    const close = tagKey[0] === '/';
+                    const close = tagKey === '/';
                     if (close) tagKey = tagKey.substr(1).trim();
                     if (this._tags[tagKey] === undefined) { tagStart = -1; continue; }
                     const tag = this._tags[tagKey];
@@ -122,7 +290,6 @@
     // -------------------------------------------------
     // END: BBCode Parser
     // -------------------------------------------------
-
 
     // -------------------------------------------------
     // START: F-List Parser Configuration (No changes here)
@@ -237,7 +404,7 @@
             a.href = `https://www.f-list.net/c/${encodeURIComponent(name)}`; a.target = '_blank'; a.className = 'character-icon';
             const img = p.createElement('img');
             img.src = `https://static.f-list.net/images/avatar/${name.toLowerCase().replace(/ /g, '%20')}.png`;
-            img.style.cssText = 'width:50px; height:50px; vertical-align:middle; margin-right:5px; border: 0;';
+            img.style.cssText = 'width:50px; height:50px; vertical-align:middle; border: 0;'; // Removed margin-right
             a.appendChild(img); parent.appendChild(a);
         };
         parser.addTag(new BBCodeTextTag('icon', createUserTag));
@@ -305,14 +472,28 @@
 
     function waitForElementAndRun() {
         const interval = setInterval(function() {
-            if (document.getElementById('Content') && typeof unsafeWindow.FList !== 'undefined' && typeof unsafeWindow.FList.Inlines !== 'undefined') {
+            const contentElement = document.getElementById('Content');
+            const fListDefined = typeof unsafeWindow.FList !== 'undefined';
+            const fListInlinesDefined = fListDefined && typeof unsafeWindow.FList.Inlines !== 'undefined';
+
+            console.log(`F-List Live Preview: Waiting for elements. Content: ${!!contentElement}, FList: ${fListDefined}, FList.Inlines: ${fListInlinesDefined}`);
+
+            if (contentElement && fListDefined && fListInlinesDefined) {
                 clearInterval(interval);
+                console.log("F-List Live Preview: All required elements found. Running main function.");
                 main();
             }
         }, 100);
     }
 
     function main() {
+        // Ensure page background color for dark mode
+        GM_addStyle(`
+            body {
+                background-color: #2E2828 !important;
+            }
+        `);
+
         // --- KEY CHANGE: Updated CSS ---
         GM_addStyle(`
             #Sidebar {
@@ -428,6 +609,42 @@
             #live-preview-content h2 {
                 color: #78c624 !important;
             }
+
+            /* Custom styles for dropdown buttons and smiley icons */
+            .unicode-dropdown-container .ToolbarButton,
+            .smiley-dropdown-container .ToolbarButton {
+                background-color: transparent !important; /* Ensure transparent background */
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                padding: 5px 10px !important; /* Adjust padding as needed */
+            }
+
+            .unicode-dropdown-container .ToolbarButton img,
+            .smiley-dropdown-container .ToolbarButton img {
+                display: inline-block !important;
+                vertical-align: middle !important;
+                width: 16px !important;
+                height: 16px !important;
+            }
+
+
+            /* Removed ToolbarUnicodeIcon and ToolbarSmileyIcon CSS as Bootstrap Icons are now used */
+
+            .smiley-button {
+                background-color: transparent !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                padding: 2px !important;
+            }
+
+
+            .smiley-button img {
+                width: 24px; /* Ensure consistent size */
+                height: 24px; /* Ensure consistent size */
+                vertical-align: middle; /* Align image vertically */
+            }
         `);
 
         const contentCell = document.getElementById('Content');
@@ -502,7 +719,7 @@
         contentCell.appendChild(previewSidebarWrapper);
 
         // --- KEY CHANGE: Make elements visible now that the layout is ready ---
-        GM_addStyle('#Sidebar, #Content { visibility: visible; }');
+        GM_addStyle('#Sidebar, #Content, #Footer, #width-controls-header { opacity: 1; }'); /* Added #Footer and #width-controls-header */
 
         // Get references to the textarea and the preview display area
         const descriptionTextarea = document.getElementById('CharacterEditDescription');
@@ -534,6 +751,258 @@
         descriptionTextarea.addEventListener('input', debouncedUpdatePreview);
         updatePreview();
 
+        // Insert the new section for special unicode characters inside the "Basic details" tab
+        let basicDetailsHeader = null;
+        const h3Elements = editorWrapper.querySelectorAll('h3');
+        for (const h3 of h3Elements) {
+            if (h3.textContent.trim() === 'Basic details') {
+                basicDetailsHeader = h3;
+                break;
+            }
+        }
+
+        if (basicDetailsHeader) {
+            const basicDetailsContentDiv = basicDetailsHeader.nextElementSibling; // This is the ui-accordion-content div
+            if (basicDetailsContentDiv) {
+
+                const descriptionPanel = basicDetailsContentDiv.querySelector('.panel.form-element'); // The panel containing the textarea
+
+                // New modern toolbar HTML
+                const modernToolbarHtml = `
+                    <div class="modern-toolbar">
+                        <div class="toolbar-section">
+                            <button type="button" class="toolbar-button" data-bbcode="b" title="Bold"><span class="ToolbarBold"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="i" title="Italic"><span class="ToolbarItalic"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="u" title="Underline"><span class="ToolbarUnderline"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="justify" title="Justify"><span class="ToolbarJustify"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="quote" title="Blockquote"><span class="ToolbarQuote"></span></button>
+                        </div>
+                        <div class="toolbar-section">
+                            <button type="button" class="toolbar-button" data-bbcode="link" title="Link"><span class="ToolbarLink"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="color" title="Color"><span class="ToolbarColor"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="icon" title="Icon link"><span class="ToolbarIcon"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="collapse" title="Collapse"><span class="ToolbarCollapse"></span></button>
+                            <button type="button" class="toolbar-button" data-bbcode="inline" title="Insert Inline"><span class="ToolbarInline"></span></button>
+                        </div>
+                        <div class="toolbar-section dropdown-container unicode-dropdown-section">
+                            <!-- Unicode Dropdown will be inserted here by JS -->
+                        </div>
+                    </div>
+                `;
+
+                // Remove the old toolbar and insert the new one
+                const oldToolbar = descriptionPanel.querySelector('.TextareaToolbar.MediumPanel');
+                if (oldToolbar) {
+                    oldToolbar.remove();
+                }
+                $(descriptionPanel).prepend(modernToolbarHtml);
+
+                const newToolbar = descriptionPanel.querySelector('.modern-toolbar');
+
+                const unicodeCharacters = [
+                    { name: 'Zero Width Space (ZWSP)', char: '​' },
+                    { name: 'Zero Width Joiner (ZWJ)', char: '‍' },
+                    { name: 'Zero Width Non-Joiner (ZWNJ)', char: '‌' },
+                    { name: 'Left-To-Right Mark (LTR)', char: '‎' },
+                    { name: 'Right-To-Left Mark (RTL)', char: '‏' },
+                    { name: 'En Quad (U+2000)', char: '\u2000' },
+                    { name: 'Em Quad (U+2001)', char: '\u2001' },
+                    { name: 'En Space (U+2002)', char: '\u2002' },
+                    { name: 'Em Space (U+2003)', char: '\u2003' },
+                    { name: 'Three-Per-Em Space (U+2004)', char: '\u2004' },
+                    { name: 'Four-Per-Em Space (U+2005)', char: '\u2005' },
+                    { name: 'Six-Per-Em Space (U+2006)', char: '\u2006' },
+                    { name: 'Figure Space (U+2007)', char: '\u2007' },
+                    { name: 'Punctuation Space (U+2008)', char: '\u2008' },
+                    { name: 'Thin Space (U+2009)', char: '\u2009' },
+                    { name: 'Hair Space (U+200A)', char: '\u200A' },
+                    { name: 'Narrow No-Break Space (U+202F)', char: '\u202F' },
+                    { name: 'Medium Mathematical Space (U+205F)', char: '\u205F' },
+                    { name: 'Ideographic Space (U+3000)', char: '\u3000' }
+                ];
+
+                let unicodeDropdownHtml = `
+                    <div class="unicode-dropdown-container dropdown-content">
+                        <table id="non-printing-chars-table" class="alt-codes" style="width: 100%; border-collapse: collapse;">
+                            <tbody>
+                                <tr>
+                                    <th style="text-align: left; padding: 5px; border-bottom: 1px solid #555;">Description</th>
+                                    <th style="text-align: left; padding: 5px; border-bottom: 1px solid #555;">Click to Copy</th>
+                                </tr>
+                `;
+
+                unicodeCharacters.forEach(item => {
+                    unicodeDropdownHtml += `
+                                <tr>
+                                    <td style="padding: 5px; border-bottom: 1px solid #444;">${item.name}</td>
+                                    <td style="padding: 5px; border-bottom: 1px solid #444;"><span class="cs" title="${item.name}" data-clipboard-text="${item.char}" style="border: 1px solid #000; padding: 2px 5px; cursor: pointer; display: inline-block; min-width: 20px; text-align: center; background-color: #555;">${item.char}</span></td>
+                                </tr>
+                    `;
+                });
+
+                unicodeDropdownHtml += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                // START: Monospace Dropdown Implementation - Removed as per user feedback
+                // START: Smiley Dropdown Implementation - Removed as per user feedback
+                const smileyBox = descriptionPanel.querySelector('.SmileyBox');
+                // Ensure the original smiley box is hidden, not removed, to prevent update errors.
+                if (smileyBox) {
+                    $(smileyBox).hide();
+                }
+                let smileyDropdownHtml = ''; // No smiley dropdown HTML needed in the new toolbar
+
+                if (newToolbar) {
+                    // Append dropdown buttons to the new toolbar
+                    const unicodeDropdownButtonHtml = `<button id="unicode-dropdown-button" class="toolbar-button" title="Unicode Characters"><img src="https://static.f-list.net/images/charimage/42347482.png" style="width: 16px; height: 16px;" alt="Unicode Icon"></button>`;
+
+                    $(newToolbar).find('.unicode-dropdown-section').prepend(unicodeDropdownButtonHtml);
+                    $(newToolbar).find('.unicode-dropdown-section').append(unicodeDropdownHtml);
+                    // Removed monospace and smiley dropdown buttons and content as per user feedback
+
+                    // Add click handlers for the new toolbar buttons
+                    $(newToolbar).on('click', '.toolbar-button', function(event) {
+                        event.preventDefault();
+                        const bbcode = $(this).data('bbcode');
+                        const action = $(this).data('action');
+
+                        if (action === 'preview') {
+                            // Preview button is now outside the toolbar, handled separately
+                        } else if (bbcode) {
+                            switch (bbcode) {
+                                case 'b':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[b]','[/b]');
+                                    break;
+                                case 'i':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[i]','[/i]');
+                                    break;
+                                case 'u':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[u]','[/u]');
+                                    break;
+                                case 'justify':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[justify]','[/justify]');
+                                    break;
+                                case 'quote':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[quote]','[/quote]');
+                                    break;
+                                case 'link':
+                                    var linkurl=unsafeWindow.FList.Toolbars_createLink();
+                                    if(linkurl!==-1){ unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[url=' + linkurl + ']','[/url]'); }
+                                    break;
+                                case 'color':
+                                    var colortext=unsafeWindow.FList.Toolbars_createColor();
+                                    if(colortext!==-1){ unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[color=' + colortext + ']','[/color]'); }
+                                    break;
+                                case 'icon':
+                                    var icontext=unsafeWindow.FList.Toolbars_createIconLink();
+                                    if(icontext!==-1){ unsafeWindow.$('#CharacterEditDescription').insertAtCaret('','[icon]' + icontext + '[/icon]'); }
+                                    break;
+                                case 'collapse':
+                                    unsafeWindow.$('#CharacterEditDescription').insertAtCaret('[collapse=title]','[/collapse]');
+                                    break;
+                                case 'inline':
+                                    unsafeWindow.FList.Toolbars_showInlines('CharacterEditDescription');
+                                    break;
+                            }
+                        }
+                    });
+
+                    // Add dropdown toggle functionality for unicode
+                    $(newToolbar).on('click', '#unicode-dropdown-button', function(event) {
+                        event.preventDefault();
+                        event.stopPropagation(); // Prevent event from bubbling up and causing form submission
+                        const unicodeDropdown = $(newToolbar).find('.unicode-dropdown-container.dropdown-content');
+                        unicodeDropdown.slideToggle(200);
+
+                        // Centering logic for unicode dropdown relative to the textarea
+                        const descriptionTextareaRect = descriptionTextarea.getBoundingClientRect();
+                        const dropdownRect = unicodeDropdown.getBoundingClientRect();
+
+                        const editorPanel = descriptionPanel; // The .panel.form-element
+                        const editorPanelRect = editorPanel.getBoundingClientRect();
+
+                        // Calculate left position relative to the editorPanel to center it over the textarea
+                        const centeredLeft = (descriptionTextareaRect.left - editorPanelRect.left) + (descriptionTextareaRect.width / 2) - (dropdownRect.width / 2);
+                        
+                        // Calculate top position to be just below the toolbar and above the textarea
+                        const toolbarHeight = $(newToolbar).outerHeight(true);
+                        const topPosition = toolbarHeight + 5; // 5px buffer below toolbar
+
+                        unicodeDropdown.css({
+                            left: `${centeredLeft}px`,
+                            top: `${topPosition}px`,
+                            position: 'absolute' // Ensure position is absolute for custom placement
+                        });
+                    });
+
+                    // Removed monospace dropdown toggle functionality as per user feedback
+                    // Removed smiley dropdown toggle functionality as per user feedback
+
+                    // Close any dropdown if the user clicks outside of it
+                    $(document).on('click', function(event) {
+                        if (!$(event.target).closest('.modern-toolbar').length) {
+                            $(newToolbar).find('.unicode-dropdown-container.dropdown-content').slideUp(200);
+                            // Removed monospace dropdown close as it's no longer in the toolbar
+                            // Removed smiley dropdown close as it's no longer in the toolbar
+                        }
+                    });
+
+                    // Add click-to-copy functionality to the unicode table
+                    $(newToolbar).find('#non-printing-chars-table').on('click', '.cs', function() {
+                        const textToCopy = $(this).data('clipboard-text');
+                        navigator.clipboard.writeText(textToCopy).then(() => {
+                            const originalText = $(this).text();
+                            $(this).text('Copied!');
+                            setTimeout(() => {
+                                $(this).text(originalText);
+                            }, 1000);
+                        }).catch(err => {
+                            console.error('F-List Live Preview: Failed to copy text: ', err);
+                        });
+                    });
+
+                    // Removed click functionality to monospace dropdown items as per user feedback
+                    // Removed click functionality to smiley buttons as per user feedback
+                }
+            }
+        }
+
+        // Create and insert the new Preview button above the live preview container
+        const previewButtonHtml = `
+            <button type="button" id="live-preview-button" class="toolbar-button" title="Preview BBCode" style="margin-bottom: 10px;"><span class="ToolbarPreview"></span> Preview</button>
+        `;
+        const livePreviewSidebar = document.getElementById('live-preview-sidebar');
+        if (livePreviewSidebar) {
+            $(livePreviewSidebar).prepend(previewButtonHtml);
+            $('#live-preview-button').on('click', function(event) {
+                event.preventDefault();
+                unsafeWindow.FList.Toolbars_instantPreview('#CharacterEditDescription');
+            });
+        }
+
+        // Remove the "Description" label and its <br> tag
+        const descriptionLabel = document.querySelector('.panel.form-element > span.simple-label');
+        if (descriptionLabel && descriptionLabel.textContent.trim() === 'Description') {
+            const brElement = descriptionLabel.nextElementSibling;
+            if (brElement && brElement.tagName === 'BR') {
+                brElement.remove();
+            }
+            descriptionLabel.remove();
+        }
+
+        // Modify the "Update Character" button to call our custom function
+        const saveButton = document.getElementById('character-button-save');
+        if (saveButton) {
+            saveButton.onclick = function(event) {
+                event.preventDefault(); // Prevent default link behavior
+                unsafeWindow.CharacterSubmit(); // Call our overridden function
+            };
+        }
+
+
         const contentWidthSlider = document.getElementById('content-width-slider');
         const contentWidthLabel = document.getElementById('content-width-label');
         const panelWidthSlider = document.getElementById('panel-width-slider');
@@ -560,8 +1029,64 @@
             });
         }
 
+        // Enable double-click to edit for width labels
+        const enableDoubleClickToEdit = (labelElement, sliderElement, applyWidthFunction) => {
+            labelElement.addEventListener('dblclick', () => {
+                const currentValue = parseInt(labelElement.textContent, 10);
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.value = currentValue;
+                input.min = sliderElement.min;
+                input.max = sliderElement.max;
+                input.style.width = '60px'; // Adjust width as needed
+                input.style.backgroundColor = '#2A2525'; // Match header background
+                input.style.color = '#ccc'; // Match header text color
+                input.style.border = '1px solid #444'; // Match header border
+                input.style.padding = '2px';
+                input.style.textAlign = 'right';
+
+                labelElement.replaceWith(input);
+                input.focus();
+
+                const handleInput = () => {
+                    let newValue = parseInt(input.value, 10);
+                    if (isNaN(newValue)) {
+                        newValue = parseInt(sliderElement.value, 10); // Revert to slider value if invalid
+                    }
+                    newValue = Math.max(parseInt(sliderElement.min, 10), Math.min(parseInt(sliderElement.max, 10), newValue));
+
+                    sliderElement.value = newValue;
+                    labelElement.textContent = `${newValue}px`;
+                    applyWidthFunction(newValue); // Apply the width change
+                    input.replaceWith(labelElement);
+                };
+
+                input.addEventListener('blur', handleInput);
+                input.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter') {
+                        handleInput();
+                    }
+                });
+            });
+        };
+
+        // Apply double-click to edit for content width
+        enableDoubleClickToEdit(contentWidthLabel, contentWidthSlider, (width) => {
+            const scaleFactor = width / 659;
+            previewContent.style.transform = `scale(${scaleFactor})`;
+            previewContent.style.transformOrigin = 'top left';
+            previewContent.style.maxWidth = `${width}px`;
+        });
+
+        // Apply double-click to edit for panel width
+        enableDoubleClickToEdit(panelWidthLabel, panelWidthSlider, (width) => {
+            previewSidebar.style.width = `${width}px`;
+        });
+
+
         console.log("F-List Live Preview script is active.");
     }
 
     waitForElementAndRun();
 })();
+
