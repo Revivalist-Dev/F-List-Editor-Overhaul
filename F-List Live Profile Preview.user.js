@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         F-List Profile Editor Overhaul - Live Profile Preview
 // @namespace    http://tampermonkey.net/
-// @version      5.1
+// @version      5.4
 // @description  Adds a live side-panel preview for the character editor that fully inherits the site's theme and component styles.
 // @author       Derby Falcon
 // @match        *://*.f-list.net/character_edit.php*
@@ -192,21 +192,16 @@
     // -------------------------------------------------
     const appendTextWithLineBreaks = (parent, text) => {
         if (!parent || typeof text !== 'string') return;
-        
-        // Preserve all whitespace including multiple spaces, but allow wrapping
-        const lines = text.split('\n');
-        lines.forEach((line, index) => {
-            if (line.length > 0) {
-                // Create a span with white-space: pre-wrap to preserve spaces but allow wrapping
-                const span = document.createElement('span');
-                span.style.whiteSpace = 'pre-wrap';
-                span.textContent = line;
-                parent.appendChild(span);
+
+        const parts = text.split('\n');
+        for (let i = 0; i < parts.length; i++) {
+            if (parts[i].length > 0) {
+                parent.appendChild(document.createTextNode(parts[i]));
             }
-            if (index < lines.length - 1) {
+            if (i < parts.length - 1) {
                 parent.appendChild(document.createElement('br'));
             }
-        });
+        }
     };
     class BBCodeTag {
         noClosingTag = false;
@@ -253,11 +248,14 @@
                 } else if (c === '=' && tagStart !== -1 && paramStart === -1) { paramStart = i;
                 } else if (c === ']' && tagStart !== -1) {
                     const paramIndex = paramStart === -1 ? i : paramStart;
-                    let tagKey = input.substring(tagStart + 1, paramIndex).trim().toLowerCase();
+                    let tagKeyRaw = input.substring(tagStart + 1, paramIndex);
+                    const close = tagKeyRaw.startsWith('/');
+                    if (close) {
+                        tagKeyRaw = tagKeyRaw.substr(1);
+                    }
+                    let tagKey = tagKeyRaw.trim().toLowerCase();
                     if (tagKey.length === 0) { tagStart = -1; continue; }
                     const param = paramStart > tagStart ? input.substring(paramStart + 1, i) : '';
-                    const close = tagKey === '/';
-                    if (close) tagKey = tagKey.substr(1).trim();
                     if (this._tags[tagKey] === undefined) { tagStart = -1; continue; }
                     const tag = this._tags[tagKey];
                     if (!close) {
@@ -268,9 +266,11 @@
                         }
                         if (tag instanceof BBCodeTextTag) {
                             const endPos = this.parse(input, i + 1, tag, undefined, isAllowed, depth + 1);
-                            const contentEnd = input.lastIndexOf('[', endPos);
-                            const content = input.substring(mark, contentEnd > mark ? contentEnd : mark);
-                            tag.createElement(this, parent, param.trim(), content); i = endPos;
+                            const closingTag = `[/${tag.tag}]`;
+                            const contentEnd = input.indexOf(closingTag, mark);
+                            const content = input.substring(mark, contentEnd !== -1 ? contentEnd : mark);
+                            tag.createElement(this, parent, param.trim(), content);
+                            i = contentEnd !== -1 ? contentEnd + closingTag.length - 1 : endPos; // Adjust i to skip the closing tag
                         } else {
                             const element = tag.createElement(this, parent, param.trim());
                             if (element !== undefined && !tag.noClosingTag) { i = this.parse(input, i + 1, tag, element, isAllowed, depth + 1); }
@@ -279,6 +279,9 @@
                     } else if (self !== undefined && self.tag === tagKey) {
                         if (parent !== undefined) { appendTextWithLineBreaks(parent, input.substring(mark, tagStart)); }
                         return i;
+                    } else if (close) {
+                        tagStart = -1;
+                        continue;
                     }
                     tagStart = -1;
                 }
@@ -307,7 +310,12 @@
         hrTag.noClosingTag = true;
         parser.addTag(hrTag);
         parser.addTag(new BBCodeCustomTag('center', (p, parent) => {
-            const el = p.createElement('div'); el.style.textAlign = 'center'; parent.appendChild(el); return el;
+            const spanEl = p.createElement('span');
+            spanEl.className = 'centertext';
+            const divEl = p.createElement('div');
+            spanEl.appendChild(divEl);
+            parent.appendChild(spanEl);
+            return divEl; // Return the div so content is parsed into it
         }));
         parser.addTag(new BBCodeCustomTag('right', (p, parent) => {
             const el = p.createElement('div'); el.style.textAlign = 'right'; parent.appendChild(el); return el;
@@ -325,39 +333,41 @@
         parser.addTag(new BBCodeSimpleTag('small', 'span', ['smalltext']));
         parser.addTag(new BBCodeSimpleTag('heading', 'h2'));
         parser.addTag(new BBCodeCustomTag('color', (p, parent, param) => {
-            const el = p.createElement('span');
+            const el = p.createElement('span'); // Changed from 'div' to 'span'
             if (/^(#([0-9a-f]{3}){1,2}|[a-z]+)$/i.test(param)) {
-                el.style.color = param;
+                const colorClassMap = {
+                    'white': 'whitefont',
+                    'red': 'redfont',
+                    // Add other color mappings as needed based on F-List's CSS
+                };
+                const className = colorClassMap[param.toLowerCase()];
+                if (className) {
+                    el.className = className;
+                } else {
+                    el.style.color = param;
+                }
                 // Store the color value as a data attribute for potential nested handling
                 el.setAttribute('data-color', param);
             }
             parent.appendChild(el); return el;
         }));
-        parser.addTag(new BBCodeTextTag('url', (p, parent, param, content) => {
+        parser.addTag(new BBCodeCustomTag('url', (p, parent, param) => {
             let url = param.trim();
-            let text = content.trim();
+            const a = p.createElement('a');
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer nofollow';
+            a.style.color = 'inherit'; // Inherit color by default
 
             if (!url) {
-                url = text;
-            }
-            
-            if (text === '') {
-                text = url;
+                // If no URL parameter, the content itself will be the URL.
+                // The actual text content will be parsed into 'a' by the main parser.
+                a.href = '#'; // Placeholder href
+                parent.appendChild(a);
+                return a; // Return 'a' so content is parsed into it
             }
 
-            if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-                const a = p.createElement('a');
+            if (url.startsWith('http://') || url.startsWith('https://')) {
                 a.href = url;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer nofollow';
-                a.style.color = 'inherit';
-
-                const contentParser = createFListParser();
-                delete contentParser._tags['url'];
-                
-                const parsedContent = contentParser.parseEverything(text);
-                a.innerHTML = parsedContent.innerHTML;
-
                 parent.appendChild(a);
 
                 const domainSpan = p.createElement('span');
@@ -365,14 +375,21 @@
                 if (domainMatch) {
                     domainSpan.textContent = ` [${domainMatch[1]}]`;
                     domainSpan.style.fontSize = '0.8em';
-                    parent.appendChild(domainSpan);
+                    parent.appendChild(domainSpan); // Append domain span to the parent, not the link itself
                 }
+                return a; // Return 'a' so content is parsed into it
             } else {
-                appendTextWithLineBreaks(parent, `[url${param ? '=' + param : ''}]${content}[/url]`);
+                // If URL is invalid, create a non-functional link and let content be parsed into it.
+                a.href = '#';
+                parent.appendChild(a);
+                return a; // Return 'a' so content is parsed into it
             }
         }));
         parser.addTag(new BBCodeTextTag('img', (p, parent, param, content) => {
-            const img = p.createElement('img'); img.style.maxWidth = '100%';
+            const divEl = p.createElement('div'); // Create a div wrapper
+            const img = p.createElement('img');
+            img.className = 'ImageBlock'; // Apply the class
+
             if (param) {
                 const inlines = unsafeWindow.FList.Inlines.inlines;
                 const inlineData = inlines ? inlines[param] : null;
@@ -380,7 +397,8 @@
                     const { hash, extension } = inlineData;
                     img.src = `https://static.f-list.net/images/charinline/${hash.substring(0, 2)}/${hash.substring(2, 4)}/${hash}.${extension}`;
                     img.alt = content.trim();
-                    parent.appendChild(img);
+                    divEl.appendChild(img); // Append img to div
+                    parent.appendChild(divEl); // Append div to parent
                 } else {
                     // Inline image not found or doesn't belong to account - display raw BBCode
                     appendTextWithLineBreaks(parent, `[img=${param}]${content}[/img]`);
@@ -390,7 +408,8 @@
                 const url = content.trim();
                 if (url.startsWith('http://') || url.startsWith('https://')) {
                     img.src = url;
-                    parent.appendChild(img);
+                    divEl.appendChild(img); // Append img to div
+                    parent.appendChild(divEl); // Append div to parent
                 }
                 else {
                     appendTextWithLineBreaks(parent, `[img]${content}[/img]`);
@@ -421,28 +440,27 @@
             const header = p.createElement('div');
             header.className = 'CollapseHeader';
             header.setAttribute('bound', 'true'); // Add bound attribute like website
-            
+
             const headerText = p.createElement('div');
             headerText.className = 'CollapseHeaderText';
-            
+
             const headerSpan = p.createElement('span');
             appendTextWithLineBreaks(headerSpan, param || '\u00A0');
-            
+
             headerText.appendChild(headerSpan);
             header.appendChild(headerText);
-            
+
             const block = p.createElement('div');
             block.className = 'CollapseBlock';
-            block.style.display = 'none';
-            
+
             parent.appendChild(header);
             parent.appendChild(block);
-            
+
             $(header).on('click', function() {
                 $(this).toggleClass('ExpandedHeader');
                 $(block).slideToggle(200);
             });
-            
+
             return block;
         }));
         parser.addTag(new BBCodeTextTag('noparse', (p, parent, param, content) => {
@@ -487,13 +505,6 @@
     }
 
     function main() {
-        // Ensure page background color for dark mode
-        GM_addStyle(`
-            body {
-                background-color: #2E2828 !important;
-            }
-        `);
-
         // --- KEY CHANGE: Updated CSS ---
         GM_addStyle(`
             #Sidebar {
@@ -926,7 +937,7 @@
 
                         // Calculate left position relative to the editorPanel to center it over the textarea
                         const centeredLeft = (descriptionTextareaRect.left - editorPanelRect.left) + (descriptionTextareaRect.width / 2) - (dropdownRect.width / 2);
-                        
+
                         // Calculate top position to be just below the toolbar and above the textarea
                         const toolbarHeight = $(newToolbar).outerHeight(true);
                         const topPosition = toolbarHeight + 5; // 5px buffer below toolbar
