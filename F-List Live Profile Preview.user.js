@@ -327,7 +327,10 @@
             const el = p.createElement('div'); el.style.textAlign = 'left'; parent.appendChild(el); return el;
         }));
         parser.addTag(new BBCodeCustomTag('indent', (p, parent) => {
-            const el = p.createElement('div'); el.style.paddingLeft = '3em'; parent.appendChild(el); return el;
+            const el = p.createElement('div');
+            el.className = 'indent-block'; // Apply a class
+            parent.appendChild(el);
+            return el;
         }));
         parser.addTag(new BBCodeSimpleTag('big', 'span', ['bigtext']));
         parser.addTag(new BBCodeSimpleTag('small', 'span', ['smalltext']));
@@ -505,6 +508,10 @@
     }
 
     function main() {
+        const originalBaseWidth = 659;
+        const originalBaseHeight = 847.767;
+        const aspectRatio = originalBaseHeight / originalBaseWidth;
+
         // --- KEY CHANGE: Updated CSS ---
         GM_addStyle(`
             #Sidebar {
@@ -577,18 +584,20 @@
                 min-width: 0; /* Allow the panel to shrink below content size */
             }
             #live-preview-content .character-description {
-                transform-origin: top left;
                 /* Scaling will be applied by JS */
                 max-width: 100%;
-                min-width: 659px; /* Start at default width of 659px */
                 width: 100%; /* Fill available width */
                 /* overflow-x: auto; REMOVED - scrollbar moved to panel level */
                 line-height: 1.4;
                 word-wrap: break-word;
+                font-size: 16px; /* Set a base font size */
             }
             #live-preview-content .character-description > * {
                 max-width: 100%; /* Constrain all direct children to container width */
                 box-sizing: border-box;
+            }
+            #live-preview-content .indent-block { /* NEW RULE */
+                padding-left: 3em; /* Default padding for 3em */
             }
             #live-preview-content .CollapseBlock {
                 background-color: #4C4646;
@@ -596,22 +605,16 @@
                 margin: 0;
                 width: 100%; /* Ensure collapse blocks fill container width */
                 box-sizing: border-box;
-                min-width: 100%; /* Maintain same width when expanded */
-                max-width: 659px; /* Constrain to same width as content */
             }
             #live-preview-content .CollapseHeader {
                 width: 100%; /* Ensure collapse headers fill container width */
                 box-sizing: border-box;
-                min-width: 100%; /* Maintain same width when collapsed */
-                max-width: 659px; /* Constrain to same width as content */
             }
             #live-preview-content .CollapseHeaderText {
                 width: 100%; /* Ensure header text fills the header */
                 box-sizing: border-box;
             }
             #live-preview-content .CollapseHeaderText span {
-                display: block;
-                width: 100%;
                 box-sizing: border-box;
             }
             #CharacterEditDescription {
@@ -674,8 +677,8 @@
         widthControlsHeader.innerHTML = `
             <div class="width-control">
                 <span>Content Scale:</span>
-                <input type="range" id="content-width-slider" min="300" max="1200" value="659">
-                <span class="width-label" id="content-width-label">659px</span>
+                <input type="range" id="content-width-slider" min="300" max="1200" value="400">
+                <span class="width-label" id="content-width-label">400px</span>
             </div>
             <div class="width-control">
                 <span>Panel Width:</span>
@@ -736,6 +739,54 @@
         const descriptionTextarea = document.getElementById('CharacterEditDescription');
         const previewContentDiv = document.querySelector('#live-preview-content .character-description');
         const parser = createFListParser();
+
+        // Initial scaling and height adjustment
+        const initialWidth = parseFloat(contentWidthSlider.value);
+        const initialScaleFactor = initialWidth / originalBaseWidth;
+
+        previewContentDiv.style.width = `${initialWidth}px`;
+        previewContentDiv.style.maxWidth = `${initialWidth}px`;
+        previewContentDiv.style.fontSize = `${originalFontSize * initialScaleFactor}px`; // Assuming originalFontSize is 16
+
+        const livePreviewContentPanel = document.querySelector('#live-preview-content.panel');
+        if (livePreviewContentPanel) {
+            const initialHeight = initialWidth * aspectRatio;
+            livePreviewContentPanel.style.height = `${initialHeight}px`;
+        }
+
+        // Initial scaling and height adjustment
+        const initialWidth = parseFloat(contentWidthSlider.value);
+        const originalBaseWidth = 659;
+        const originalBaseHeight = 847.767;
+        const aspectRatio = originalBaseHeight / originalBaseWidth;
+        const initialScaleFactor = initialWidth / originalBaseWidth;
+
+        previewContentDiv.style.transform = `scale(${initialScaleFactor})`;
+        previewContentDiv.style.transformOrigin = 'top left';
+        previewContentDiv.style.maxWidth = `${initialWidth}px`;
+
+        const livePreviewContentPanel = document.querySelector('#live-preview-content.panel');
+        if (livePreviewContentPanel) {
+            const initialHeight = initialWidth * aspectRatio;
+            livePreviewContentPanel.style.height = `${initialHeight}px`;
+        }
+
+        // Initial scaling and height adjustment
+        const initialWidth = parseFloat(contentWidthSlider.value);
+        const originalBaseWidth = 659;
+        const originalBaseHeight = 847.767;
+        const aspectRatio = originalBaseHeight / originalBaseWidth;
+        const initialScaleFactor = initialWidth / originalBaseWidth;
+
+        previewContentDiv.style.transform = `scale(${initialScaleFactor})`;
+        previewContentDiv.style.transformOrigin = 'top left';
+        previewContentDiv.style.maxWidth = `${initialWidth}px`;
+
+        const livePreviewContentPanel = document.querySelector('#live-preview-content.panel');
+        if (livePreviewContentPanel) {
+            const initialHeight = initialWidth * aspectRatio;
+            livePreviewContentPanel.style.height = `${initialHeight}px`;
+        }
 
         let previewTimeout;
         const updatePreview = () => {
@@ -1029,6 +1080,7 @@
                 previewContent.style.transformOrigin = 'top left';
                 previewContent.style.maxWidth = `${newWidth}px`;
                 contentWidthLabel.textContent = `${newWidth}px`;
+
             });
         }
 
@@ -1087,6 +1139,16 @@
             previewContent.style.transform = `scale(${scaleFactor})`;
             previewContent.style.transformOrigin = 'top left';
             previewContent.style.maxWidth = `${width}px`;
+
+            // Add height adjustment for live-preview-content panel
+            const originalBaseWidth = 659;
+            const originalBaseHeight = 847.767;
+            const aspectRatio = originalBaseHeight / originalBaseWidth;
+            const livePreviewContentPanel = document.querySelector('#live-preview-content.panel');
+            if (livePreviewContentPanel) {
+                const newHeight = width * aspectRatio;
+                livePreviewContentPanel.style.height = `${newHeight}px`;
+            }
         });
 
         // Apply double-click to edit for panel width
